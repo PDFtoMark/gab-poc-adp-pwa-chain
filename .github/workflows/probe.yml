@@ -1,0 +1,36 @@
+name: npmprobe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: versions
+        run: node -v; npm -v
+      - name: A root lifecycle scripts with install spec
+        run: |
+          rm -f /tmp/MARK_PRE /tmp/MARK_INS /tmp/MARK_POST /tmp/MARK_PREP
+          mkdir -p "$RUNNER_TEMP/a" && cd "$RUNNER_TEMP/a"
+          cat > package.json <<'JSON'
+          {"name":"proj-a","version":"1.0.0","private":true,
+           "scripts":{
+             "preinstall":"node -e \"require('fs').writeFileSync('/tmp/MARK_PRE','ran')\"",
+             "install":"node -e \"require('fs').writeFileSync('/tmp/MARK_INS','ran')\"",
+             "postinstall":"node -e \"require('fs').writeFileSync('/tmp/MARK_POST','ran')\"",
+             "prepare":"node -e \"require('fs').writeFileSync('/tmp/MARK_PREP','ran')\""}}
+          JSON
+          echo x > linter-report.txt
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -15 || echo NPM_FAIL
+          for m in PRE INS POST PREP; do if [ -f /tmp/MARK_$m ]; then echo RESULT_$m=RAN; else echo RESULT_$m=BLOCKED; fi; done
+      - name: B without package.json control of node_modules path
+        run: |
+          rm -f /tmp/MARK_B
+          mkdir -p "$RUNNER_TEMP/b/node_modules/adp-devsite-scripts/linter-bot" && cd "$RUNNER_TEMP/b"
+          echo "require('fs').writeFileSync('/tmp/MARK_B','ran')" > node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js
+          echo '{"name":"adp-devsite-scripts","version":"0.0.1"}' > node_modules/adp-devsite-scripts/package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts >/tmp/b.log 2>&1 && echo NPM_OK || echo NPM_FAIL
+          test -f node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js && echo "OURS_SURVIVED" || echo "OURS_REPLACED"
+          node node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js && echo NODE_OK || echo NODE_FAIL
+          test -f /tmp/MARK_B && echo RESULT_B=RAN || echo RESULT_B=BLOCKED
